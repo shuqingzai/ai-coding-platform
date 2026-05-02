@@ -1,14 +1,12 @@
-asyncapi: "2.6.0"
+asyncapi: "3.0.0"
 info:
   title: AI Coding Platform — WebSocket Chat API
   description: |
     基于 AI SDK UI Stream Protocol v1 的 Agentic Chat WebSocket 协议。
 
-    **连接地址**: `ws://localhost:3001/ws/chat`
-
     **核心特性**:
     - 全双工流式对话，20 种服务端消息类型 + 3 种客户端消息类型
-    - AI Agent 16 个工具调用 (bash/read/write/edit/grep/glob/apply_patch/skill/todowrite/webfetch/websearch/question/task/lsp/plan/invalid)
+    - AI Agent 16 个工具调用
     - Question/Answer 双向交互流程 (60s 超时)
     - Todo 实时推送
     - 单连接单消息处理 (重复 chat 消息返回 error)
@@ -20,16 +18,22 @@ info:
 
 servers:
   local:
-    url: ws://localhost:3001
+    host: localhost:3001
+    pathname: /ws/chat
     protocol: ws
     description: 本地开发服务器
 
 channels:
-  /ws/chat:
-    description: Agentic Chat WebSocket 端点
-    subscribe:
-      summary: 接收服务端流式消息
-      message:
+  chat:
+    address: /ws/chat
+    description: "Agentic Chat 全双工 WebSocket 端点。客户端发送 chat/cancel/answer 消息，服务端流式返回 text/reasoning/tool/error/finish 等事件。"
+    messages:
+      clientToServer:
+        oneOf:
+          - $ref: "#/components/messages/chat"
+          - $ref: "#/components/messages/cancel"
+          - $ref: "#/components/messages/answer"
+      serverToClient:
         oneOf:
           - $ref: "#/components/messages/start"
           - $ref: "#/components/messages/done"
@@ -55,13 +59,23 @@ channels:
           - $ref: "#/components/messages/toolProgress"
           - $ref: "#/components/messages/question"
           - $ref: "#/components/messages/todosUpdate"
-    publish:
-      summary: 发送客户端消息
-      message:
-        oneOf:
-          - $ref: "#/components/messages/chat"
-          - $ref: "#/components/messages/cancel"
-          - $ref: "#/components/messages/answer"
+
+operations:
+  sendChat:
+    action: send
+    channel:
+      $ref: "#/channels/chat"
+    summary: "发送客户端消息 (chat / cancel / answer)"
+    messages:
+      - $ref: "#/channels/chat/messages/clientToServer"
+
+  receiveChat:
+    action: receive
+    channel:
+      $ref: "#/channels/chat"
+    summary: "接收服务端流式消息 (text / reasoning / tool / error / finish / question / todos-update 等 20 种事件)"
+    messages:
+      - $ref: "#/channels/chat/messages/serverToClient"
 
 components:
   messages:
@@ -110,7 +124,7 @@ components:
       title: 取消当前会话
       summary: 设置中止标志位，通知服务端停止发送流式数据。
       description: |
-        注意: cancel 仅设置标志位，不会立即中止正在运行的 `streamText()` 调用（无 AbortController 透传）。但 `onChunk` 回调会检查标志位并停止发送消息。
+        注意: cancel 仅设置标志位，不会立即中止正在运行的 streamText() 调用（无 AbortController 透传）。但 onChunk 回调会检查标志位并停止发送消息。
       payload:
         type: object
         required: [type]
@@ -122,7 +136,7 @@ components:
     answer:
       name: answer
       title: 回答 AI 提问
-      summary: 当 AI 通过 `question` 工具提问时，客户端发送回答。
+      summary: 当 AI 通过 question 工具提问时，客户端发送回答。
       description: |
         服务端会等待最多 60 秒。超时后自动回复 "User did not answer within 60 seconds"。
       payload:
@@ -176,7 +190,7 @@ components:
     textStart:
       name: text-start
       title: 文本流开始
-      summary: 开始一段增量文本输出，id 用于关联后续 delta/end。
+      summary: 开始一段增量文本输出。
       payload:
         type: object
         required: [type, id]
@@ -266,7 +280,7 @@ components:
     toolInputStart:
       name: tool-input-start
       title: 工具输入开始
-      summary: AI 开始调用工具，toolCallId 用于关联后续事件。
+      summary: AI 开始调用工具。
       payload:
         type: object
         required: [type, toolCallId, toolName]
@@ -298,7 +312,7 @@ components:
     toolInputAvailable:
       name: tool-input-available
       title: 工具输入完成
-      summary: 工具调用参数已完整，服务端即将执行工具。
+      summary: 工具调用参数已完整，即将执行工具。
       payload:
         type: object
         required: [type, toolCallId, toolName, input]
@@ -555,18 +569,3 @@ components:
           type: string
           enum: [high, medium, low]
           description: 任务优先级
-
-    StreamEvent:
-      type: string
-      description: |
-        服务端流式消息类型枚举:
-        `start` `done`
-        `text-start` `text-delta` `text-end`
-        `reasoning-start` `reasoning-delta` `reasoning-end`
-        `tool-input-start` `tool-input-delta` `tool-input-available`
-        `tool-output-available` `tool-output-error`
-        `start-step` `finish-step`
-        `source-url` `file`
-        `error` `finish` `abort`
-        `file-change` `tool-progress`
-        `question` `todos-update`
