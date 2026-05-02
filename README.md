@@ -193,6 +193,8 @@ ai-coding-platform/
 { "type": "source-url", "sourceId": "...", "url": "...", "title": "..." }
 ```
 
+> **API 文档**: 完整 OpenAPI 3.0 规范见 [`docs/openapi.yaml`](docs/openapi.yaml)，WebSocket 协议见 [`docs/asyncapi.yaml`](docs/asyncapi.yaml)。
+
 ## Agentic Coding 工具 (16 个，对齐 OpenCode)
 
 | 工具 | 说明 |

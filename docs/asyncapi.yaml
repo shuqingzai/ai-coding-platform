@@ -1,0 +1,572 @@
+asyncapi: "2.6.0"
+info:
+  title: AI Coding Platform — WebSocket Chat API
+  description: |
+    基于 AI SDK UI Stream Protocol v1 的 Agentic Chat WebSocket 协议。
+
+    **连接地址**: `ws://localhost:3001/ws/chat`
+
+    **核心特性**:
+    - 全双工流式对话，20 种服务端消息类型 + 3 种客户端消息类型
+    - AI Agent 16 个工具调用 (bash/read/write/edit/grep/glob/apply_patch/skill/todowrite/webfetch/websearch/question/task/lsp/plan/invalid)
+    - Question/Answer 双向交互流程 (60s 超时)
+    - Todo 实时推送
+    - 单连接单消息处理 (重复 chat 消息返回 error)
+    - 自定义 Provider 的 providerOptions 透传
+  version: "1.0.0"
+  contact:
+    name: AI Coding Platform
+    url: https://github.com/anomalyco/opencode
+
+servers:
+  local:
+    url: ws://localhost:3001
+    protocol: ws
+    description: 本地开发服务器
+
+channels:
+  /ws/chat:
+    description: Agentic Chat WebSocket 端点
+    subscribe:
+      summary: 接收服务端流式消息
+      message:
+        oneOf:
+          - $ref: "#/components/messages/start"
+          - $ref: "#/components/messages/done"
+          - $ref: "#/components/messages/textStart"
+          - $ref: "#/components/messages/textDelta"
+          - $ref: "#/components/messages/textEnd"
+          - $ref: "#/components/messages/reasoningStart"
+          - $ref: "#/components/messages/reasoningDelta"
+          - $ref: "#/components/messages/reasoningEnd"
+          - $ref: "#/components/messages/toolInputStart"
+          - $ref: "#/components/messages/toolInputDelta"
+          - $ref: "#/components/messages/toolInputAvailable"
+          - $ref: "#/components/messages/toolOutputAvailable"
+          - $ref: "#/components/messages/toolOutputError"
+          - $ref: "#/components/messages/startStep"
+          - $ref: "#/components/messages/finishStep"
+          - $ref: "#/components/messages/sourceUrl"
+          - $ref: "#/components/messages/file"
+          - $ref: "#/components/messages/error"
+          - $ref: "#/components/messages/finish"
+          - $ref: "#/components/messages/abort"
+          - $ref: "#/components/messages/fileChange"
+          - $ref: "#/components/messages/toolProgress"
+          - $ref: "#/components/messages/question"
+          - $ref: "#/components/messages/todosUpdate"
+    publish:
+      summary: 发送客户端消息
+      message:
+        oneOf:
+          - $ref: "#/components/messages/chat"
+          - $ref: "#/components/messages/cancel"
+          - $ref: "#/components/messages/answer"
+
+components:
+  messages:
+    # ════════════════ 客户端 → 服务端 ════════════════
+    chat:
+      name: chat
+      title: 发起 Agentic Chat
+      summary: 启动一个完整的 AI Agent 对话会话 (含工具调用循环)。
+      description: |
+        **注意**: 同一连接同一时间只能处理一条 chat 消息。如果在处理中再次发送 chat，服务端会返回 `error` (A message is already being processed)。
+      payload:
+        type: object
+        required: [type, messages]
+        properties:
+          type:
+            type: string
+            enum: [chat]
+          messageId:
+            type: string
+            description: 可选消息 ID
+          messages:
+            type: array
+            items:
+              $ref: "#/components/schemas/ChatMessage"
+          provider:
+            type: string
+            description: AI 服务商 ID (默认 "openai")
+          model:
+            type: string
+            description: 模型名称
+          apiKey:
+            type: string
+            description: API Key (可选，优先于环境变量)
+      examples:
+        - name: basic
+          payload:
+            type: "chat"
+            messages:
+              - role: "user"
+                content: "帮我创建一个 hello.ts 文件"
+            provider: "deepseek"
+            model: "deepseek-chat"
+
+    cancel:
+      name: cancel
+      title: 取消当前会话
+      summary: 设置中止标志位，通知服务端停止发送流式数据。
+      description: |
+        注意: cancel 仅设置标志位，不会立即中止正在运行的 `streamText()` 调用（无 AbortController 透传）。但 `onChunk` 回调会检查标志位并停止发送消息。
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [cancel]
+
+    answer:
+      name: answer
+      title: 回答 AI 提问
+      summary: 当 AI 通过 `question` 工具提问时，客户端发送回答。
+      description: |
+        服务端会等待最多 60 秒。超时后自动回复 "User did not answer within 60 seconds"。
+      payload:
+        type: object
+        required: [type, toolCallId, answers]
+        properties:
+          type:
+            type: string
+            enum: [answer]
+          toolCallId:
+            type: string
+            description: 与 question 消息中的 toolCallId 对应
+          answers:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+            description: 各问题的回答选项数组
+
+    # ════════════════ 服务端 → 客户端 ════════════════
+
+    ### --- 消息生命周期 ---
+    start:
+      name: start
+      title: 消息开始
+      summary: 标记一条新的 AI 响应开始。
+      payload:
+        type: object
+        required: [type, messageId]
+        properties:
+          type:
+            type: string
+            enum: [start]
+          messageId:
+            type: string
+
+    done:
+      name: done
+      title: 消息结束
+      summary: 标记一条 AI 响应完全结束。
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [done]
+
+    ### --- 文本流 ---
+    textStart:
+      name: text-start
+      title: 文本流开始
+      summary: 开始一段增量文本输出，id 用于关联后续 delta/end。
+      payload:
+        type: object
+        required: [type, id]
+        properties:
+          type:
+            type: string
+            enum: [text-start]
+          id:
+            type: string
+
+    textDelta:
+      name: text-delta
+      title: 文本增量
+      summary: 流式输出的增量文本片段。
+      payload:
+        type: object
+        required: [type, id, delta]
+        properties:
+          type:
+            type: string
+            enum: [text-delta]
+          id:
+            type: string
+          delta:
+            type: string
+
+    textEnd:
+      name: text-end
+      title: 文本流结束
+      summary: 一段增量文本输出结束。
+      payload:
+        type: object
+        required: [type, id]
+        properties:
+          type:
+            type: string
+            enum: [text-end]
+          id:
+            type: string
+
+    ### --- 推理流 ---
+    reasoningStart:
+      name: reasoning-start
+      title: 推理流开始
+      summary: 开始一段 AI 推理过程输出 (如 DeepSeek-R1 的 CoT)。
+      payload:
+        type: object
+        required: [type, id]
+        properties:
+          type:
+            type: string
+            enum: [reasoning-start]
+          id:
+            type: string
+
+    reasoningDelta:
+      name: reasoning-delta
+      title: 推理增量
+      summary: 推理过程的增量文本片段。
+      payload:
+        type: object
+        required: [type, id, delta]
+        properties:
+          type:
+            type: string
+            enum: [reasoning-delta]
+          id:
+            type: string
+          delta:
+            type: string
+
+    reasoningEnd:
+      name: reasoning-end
+      title: 推理流结束
+      summary: 一段推理输出结束。
+      payload:
+        type: object
+        required: [type, id]
+        properties:
+          type:
+            type: string
+            enum: [reasoning-end]
+          id:
+            type: string
+
+    ### --- 工具输入流 ---
+    toolInputStart:
+      name: tool-input-start
+      title: 工具输入开始
+      summary: AI 开始调用工具，toolCallId 用于关联后续事件。
+      payload:
+        type: object
+        required: [type, toolCallId, toolName]
+        properties:
+          type:
+            type: string
+            enum: [tool-input-start]
+          toolCallId:
+            type: string
+          toolName:
+            type: string
+
+    toolInputDelta:
+      name: tool-input-delta
+      title: 工具输入增量
+      summary: 工具调用参数的增量流式片段。
+      payload:
+        type: object
+        required: [type, toolCallId, inputTextDelta]
+        properties:
+          type:
+            type: string
+            enum: [tool-input-delta]
+          toolCallId:
+            type: string
+          inputTextDelta:
+            type: string
+
+    toolInputAvailable:
+      name: tool-input-available
+      title: 工具输入完成
+      summary: 工具调用参数已完整，服务端即将执行工具。
+      payload:
+        type: object
+        required: [type, toolCallId, toolName, input]
+        properties:
+          type:
+            type: string
+            enum: [tool-input-available]
+          toolCallId:
+            type: string
+          toolName:
+            type: string
+          input: {}
+
+    ### --- 工具输出 ---
+    toolOutputAvailable:
+      name: tool-output-available
+      title: 工具执行结果
+      summary: 工具执行成功，返回结果。
+      payload:
+        type: object
+        required: [type, toolCallId, output]
+        properties:
+          type:
+            type: string
+            enum: [tool-output-available]
+          toolCallId:
+            type: string
+          output: {}
+
+    toolOutputError:
+      name: tool-output-error
+      title: 工具执行失败
+      summary: 工具执行出错。
+      payload:
+        type: object
+        required: [type, toolCallId, errorText]
+        properties:
+          type:
+            type: string
+            enum: [tool-output-error]
+          toolCallId:
+            type: string
+          errorText:
+            type: string
+
+    ### --- Step 边界 ---
+    startStep:
+      name: start-step
+      title: Step 开始
+      summary: 标记一个新的 Agent Step 开始。
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [start-step]
+
+    finishStep:
+      name: finish-step
+      title: Step 结束
+      summary: 标记当前 Agent Step 结束。
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [finish-step]
+
+    ### --- 来源/文件引用 ---
+    sourceUrl:
+      name: source-url
+      title: 文件引用
+      summary: 服务端引用一个文件来源。
+      payload:
+        type: object
+        required: [type, sourceId, url]
+        properties:
+          type:
+            type: string
+            enum: [source-url]
+          sourceId:
+            type: string
+          url:
+            type: string
+          title:
+            type: string
+
+    file:
+      name: file
+      title: 文件内容引用
+      summary: 服务端引用一个文件。
+      payload:
+        type: object
+        required: [type, url, mediaType]
+        properties:
+          type:
+            type: string
+            enum: [file]
+          url:
+            type: string
+          mediaType:
+            type: string
+
+    ### --- 错误/取消/完成 ---
+    error:
+      name: error
+      title: 错误
+      summary: 会话中发生错误。
+      payload:
+        type: object
+        required: [type, errorText]
+        properties:
+          type:
+            type: string
+            enum: [error]
+          errorText:
+            type: string
+
+    finish:
+      name: finish
+      title: 完成 (含用量)
+      summary: AI 生成完成，包含 token 用量统计。
+      payload:
+        type: object
+        required: [type, usage]
+        properties:
+          type:
+            type: string
+            enum: [finish]
+          usage:
+            type: object
+            required: [promptTokens, completionTokens]
+            properties:
+              promptTokens:
+                type: integer
+              completionTokens:
+                type: integer
+
+    abort:
+      name: abort
+      title: 中止
+      summary: 会话被取消或错误中止。
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            type: string
+            enum: [abort]
+          reason:
+            type: string
+
+    ### --- 文件变更事件 ---
+    fileChange:
+      name: file-change
+      title: 文件变更通知
+      summary: AI 工具执行后产生的文件变更。
+      payload:
+        type: object
+        required: [type, action, path]
+        properties:
+          type:
+            type: string
+            enum: [file-change]
+          action:
+            type: string
+            enum: [write, delete]
+          path:
+            type: string
+
+    ### --- 工具进度事件 ---
+    toolProgress:
+      name: tool-progress
+      title: 工具执行进度
+      summary: 工具执行过程中的进度更新。
+      payload:
+        type: object
+        required: [type, toolCallId, toolName, content]
+        properties:
+          type:
+            type: string
+            enum: [tool-progress]
+          toolCallId:
+            type: string
+          toolName:
+            type: string
+          title:
+            type: string
+          content:
+            type: string
+
+    ### --- 业务事件 ---
+    question:
+      name: question
+      title: AI 提问
+      summary: AI 需要用户交互确认，客户端应在 60 秒内回复 answer 消息。
+      payload:
+        type: object
+        required: [type, toolCallId, questions]
+        properties:
+          type:
+            type: string
+            enum: [question]
+          toolCallId:
+            type: string
+          questions:
+            type: array
+
+    todosUpdate:
+      name: todos-update
+      title: 任务列表更新
+      summary: AI 调用 todowrite 工具后，实时推送任务列表到前端。
+      payload:
+        type: object
+        required: [type, todos]
+        properties:
+          type:
+            type: string
+            enum: [todos-update]
+          todos:
+            type: array
+            items:
+              $ref: "#/components/schemas/TodoItem"
+
+  schemas:
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant, system, tool]
+        content:
+          type: string
+        toolCallId:
+          type: string
+        toolName:
+          type: string
+
+    TodoItem:
+      type: object
+      required: [content, status, priority]
+      properties:
+        content:
+          type: string
+          description: 任务描述
+        status:
+          type: string
+          enum: [pending, in_progress, completed, cancelled]
+          description: 任务状态
+        priority:
+          type: string
+          enum: [high, medium, low]
+          description: 任务优先级
+
+    StreamEvent:
+      type: string
+      description: |
+        服务端流式消息类型枚举:
+        `start` `done`
+        `text-start` `text-delta` `text-end`
+        `reasoning-start` `reasoning-delta` `reasoning-end`
+        `tool-input-start` `tool-input-delta` `tool-input-available`
+        `tool-output-available` `tool-output-error`
+        `start-step` `finish-step`
+        `source-url` `file`
+        `error` `finish` `abort`
+        `file-change` `tool-progress`
+        `question` `todos-update`

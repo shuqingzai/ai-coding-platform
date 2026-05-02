@@ -1,0 +1,836 @@
+openapi: "3.0.3"
+info:
+  title: AI Coding Platform API
+  description: |
+    基于 AI SDK v6 的全功能 AI 编程平台 — REST API 文档。
+
+    包括健康检查、服务商管理、文件 I/O、API 任务模式，以及 Anthropic Messages 和 OpenAI Responses 兼容协议。
+
+    WebSocket 协议文档请参阅 [AsyncAPI 规范](./asyncapi.yaml)。
+  version: "1.0.0"
+  contact:
+    name: AI Coding Platform
+    url: https://github.com/anomalyco/opencode
+
+servers:
+  - url: http://localhost:3001
+    description: 本地开发服务器
+  - url: http://localhost:80
+    description: Docker 部署 (nginx 代理)
+
+tags:
+  - name: health
+    description: 健康检查
+  - name: providers
+    description: AI 服务商与模型管理
+  - name: files
+    description: 文件系统 I/O
+  - name: run
+    description: API 任务模式
+  - name: external
+    description: 外部协议兼容 (Anthropic / OpenAI)
+
+paths:
+  # ════════════════ 健康检查 ════════════════
+  /health:
+    get:
+      tags: [health]
+      summary: 健康检查
+      description: 返回服务健康状态及已配置的 AI 服务商列表。
+      operationId: healthCheck
+      responses:
+        "200":
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                ok: true
+                providers: ["openai", "deepseek", "anthropic"]
+
+  # ════════════════ 服务商管理 ════════════════
+  /api/providers:
+    get:
+      tags: [providers]
+      summary: 获取所有服务商
+      description: 返回全部 18 个官方 Provider 及已注册的自定义 Provider，包含各自的模型列表和配置状态。
+      operationId: listProviders
+      responses:
+        "200":
+          description: 服务商列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AvailableProvider"
+
+  /api/providers/custom:
+    get:
+      tags: [providers]
+      summary: 获取自定义服务商列表
+      description: 返回所有通过 API 注册的自定义 Provider (内存存储，重启丢失)。
+      operationId: listCustomProviders
+      responses:
+        "200":
+          description: 自定义服务商列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CustomProviderConfig"
+
+    post:
+      tags: [providers]
+      summary: 注册自定义服务商
+      description: |
+        注册一个新的自定义 Provider，支持 OpenAI Compatible 或 Anthropic 协议。
+
+        必填字段：`id`、`baseURL`、`apiKey`、`models`。
+      operationId: registerCustomProvider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomProviderConfig"
+            example:
+              id: "my-llm"
+              name: "My LLM"
+              protocol: "openai-compatible"
+              baseURL: "https://api.example.com/v1"
+              apiKey: "sk-xxx"
+              models: ["gpt-4o", "gpt-4o-mini"]
+      responses:
+        "200":
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/CustomProviderConfig"
+        "400":
+          description: 缺少必填字段
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "缺少必填字段: id, baseURL, apiKey"
+        "500":
+          description: 注册失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/providers/custom/{id}:
+    delete:
+      tags: [providers]
+      summary: 删除自定义服务商
+      description: 根据 ID 删除已注册的自定义 Provider。
+      operationId: deleteCustomProvider
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 服务商 ID
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    enum: [true]
+              example:
+                ok: true
+        "404":
+          description: 未找到该服务商
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "未找到该服务商"
+
+  /api/providers/{id}/models:
+    get:
+      tags: [providers]
+      summary: 获取服务商模型列表
+      description: |
+        动态拉取指定服务商的最新模型列表。自定义 Provider 直接返回配置的模型；官方 Provider 尝试从 API 实时拉取 (5 分钟内存缓存)。
+
+        `source` 字段说明：
+        - `live` — 从服务商 API 实时获取
+        - `manual` — 自定义 Provider 手动配置
+        - `fallback` — 拉取失败，返回内置默认列表
+      operationId: fetchProviderModels
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 服务商 ID (如 `openai`、`deepseek`、`anthropic`)
+      responses:
+        "200":
+          description: 模型列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: string
+                  source:
+                    type: string
+                    enum: [live, manual, fallback]
+              example:
+                data: ["deepseek-chat", "deepseek-reasoner"]
+                source: "live"
+        "502":
+          description: 获取模型列表失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "获取模型列表失败"
+
+  # ════════════════ 文件 I/O ════════════════
+  /api/files:
+    get:
+      tags: [files]
+      summary: 读取文件或目录
+      description: |
+        根据查询参数 `path` 的值判断：
+        - 目录 (空、以 `/` 结尾、不含 `.`) → 返回文件树
+        - 文件 → 返回文件内容
+      operationId: readFile
+      parameters:
+        - name: path
+          in: query
+          required: false
+          schema:
+            type: string
+            default: ""
+          description: 相对于工作区根目录的路径 (空值表示根目录)
+      responses:
+        "200":
+          description: 目录树或文件内容
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/FileTreeResponse"
+                  - $ref: "#/components/schemas/FileContentResponse"
+        "404":
+          description: 读取失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    post:
+      tags: [files]
+      summary: 写入文件
+      description: 创建或覆写指定路径的文件。
+      operationId: writeFile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path, content]
+              properties:
+                path:
+                  type: string
+                  description: 相对于工作区根目录的文件路径
+                content:
+                  type: string
+                  description: 文件内容
+            example:
+              path: "hello.ts"
+              content: "console.log('hello');\n"
+      responses:
+        "200":
+          description: 写入成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    enum: [true]
+                  path:
+                    type: string
+              example:
+                ok: true
+                path: "hello.ts"
+        "400":
+          description: 缺少 path 或 content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "缺少 path 或 content"
+        "500":
+          description: 写入失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ════════════════ API 任务模式 ════════════════
+  /api/run:
+    post:
+      tags: [run]
+      summary: API 任务模式
+      description: |
+        两步流水线执行编程任务：
+        1. **规划阶段** — AI 拆分任务为执行计划
+        2. **编码阶段** — AI 根据计划生成 TypeScript 代码
+
+        如果不指定 `provider`/`model`，自动使用第一个已配置的 Provider。
+      operationId: runTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunTaskRequest"
+            example:
+              task: "创建一个 Express 服务器，提供 /hello 接口返回 Hello World"
+              provider: "deepseek"
+              model: "deepseek-chat"
+      responses:
+        "200":
+          description: 任务执行结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunTaskResponse"
+              example:
+                plan: "1. 初始化 Express 项目\n2. 创建服务器文件\n3. 添加 /hello 路由"
+                code: "import express from 'express';\nconst app = express();\napp.get('/hello', (req, res) => res.json({ message: 'Hello World' }));\napp.listen(3000, () => console.log('Server running'));"
+        "400":
+          description: 缺少 task 参数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "缺少 task 参数"
+        "502":
+          description: AI 调用失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ════════════════ 外部协议兼容 ════════════════
+  /v1/messages:
+    post:
+      tags: [external]
+      summary: "[Anthropic] Messages API"
+      description: |
+        兼容 Anthropic Messages API，支持流式 (SSE) 和非流式两种模式。
+
+        **认证方式**：通过 `x-api-key` 或 `anthropic-dangerous-direct-browser-access` header 传递 API Key。
+        **流式响应**：设置 `stream: true` 后返回 `text/event-stream`，事件类型包括 `message_start`、`content_block_start`、`content_block_delta`、`content_block_stop`、`message_delta`、`message_stop`。
+      operationId: anthropicMessages
+      parameters:
+        - name: x-api-key
+          in: header
+          description: API Key (Anthropic 标准认证)
+          required: false
+          schema:
+            type: string
+        - name: anthropic-dangerous-direct-browser-access
+          in: header
+          description: 浏览器直接访问认证 (备选)
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnthropicMessagesRequest"
+            example:
+              model: "claude-sonnet-4-20250514"
+              max_tokens: 1024
+              messages:
+                - role: "user"
+                  content: "Hello, world!"
+              system: "You are a helpful assistant."
+              stream: false
+              temperature: 0.7
+      responses:
+        "200":
+          description: |
+            非流式 (`stream: false` 或不传) 返回标准 Anthropic Message 格式；
+            流式 (`stream: true`) 返回 `text/event-stream` SSE 流。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicMessageResponse"
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE 流—— `message_start` → `content_block_start` → `content_block_delta` → ... → `message_stop`
+        "400":
+          description: 缺少 model 或 messages 参数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicErrorResponse"
+        "502":
+          description: AI 调用失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicErrorResponse"
+
+  /v1/responses:
+    post:
+      tags: [external]
+      summary: "[OpenAI] Responses API"
+      description: |
+        兼容 OpenAI Responses API，支持流式 (SSE) 和非流式两种模式。
+
+        **认证方式**：通过 `Authorization: Bearer <key>` header 传递 API Key。
+        **流式响应**：设置 `stream: true` 后返回 `text/event-stream`，事件类型包括 `response.created`、`response.in_progress`、`response.output_text.delta`、`response.completed`。
+      operationId: openaiResponses
+      parameters:
+        - name: Authorization
+          in: header
+          description: "Bearer token 认证 (格式: Bearer sk-xxx)"
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenAIResponsesRequest"
+            example:
+              model: "gpt-4o"
+              input: "What is the meaning of life?"
+              instructions: "You are a helpful assistant."
+              stream: false
+              temperature: 0.7
+      responses:
+        "200":
+          description: |
+            非流式 (`stream: false` 或不传) 返回标准 OpenAI Response 格式；
+            流式 (`stream: true`) 返回 `text/event-stream` SSE 流。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAIResponseResponse"
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE 流—— `response.created` → `response.in_progress` → `response.output_text.delta` → ... → `response.completed`
+        "400":
+          description: 缺少 model 参数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAIErrorResponse"
+        "502":
+          description: AI 调用失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAIErrorResponse"
+
+# ════════════════ 组件定义 ════════════════
+components:
+  schemas:
+    # --- 通用 ---
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: 错误描述
+
+    # --- 健康检查 ---
+    HealthResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        providers:
+          type: array
+          items:
+            type: string
+          description: 已配置的 Provider ID 列表
+
+    # --- 服务商 ---
+    AvailableProvider:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Provider 唯一标识
+        name:
+          type: string
+          description: 显示名称
+        models:
+          type: array
+          items:
+            type: string
+          description: 可用模型列表
+        configured:
+          type: boolean
+          description: 是否已配置 API Key
+        isCustom:
+          type: boolean
+          description: 是否为自定义 Provider
+        supportsModelFetch:
+          type: boolean
+          description: 是否支持动态模型拉取
+        defaultModel:
+          type: string
+          description: 默认模型
+
+    CustomProviderConfig:
+      type: object
+      required: [id, baseURL, apiKey, models]
+      properties:
+        id:
+          type: string
+          description: 自定义服务商唯一标识
+        name:
+          type: string
+          description: 显示名称 (默认使用 id)
+        protocol:
+          type: string
+          enum: [openai-compatible, anthropic]
+          default: "openai-compatible"
+          description: 协议类型
+        apiStyle:
+          type: string
+          enum: [responses, completions]
+          description: OpenAI Compatible 下的 API 风格 (responses 或 completions)
+        baseURL:
+          type: string
+          description: API 地址
+        apiKey:
+          type: string
+          description: API Key
+        models:
+          type: array
+          items:
+            type: string
+          description: 模型列表 (至少一个)
+        headers:
+          type: string
+          description: 额外请求头的 JSON 字符串
+        providerOptions:
+          type: string
+          description: AI SDK providerOptions 的 JSON 字符串
+
+    # --- 文件 ---
+    FileTreeItem:
+      type: object
+      properties:
+        name:
+          type: string
+          description: 文件/目录名
+        type:
+          type: string
+          enum: [file, directory]
+          description: 类型
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileTreeItem"
+          description: 子项 (仅目录)
+
+    FileTreeResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileTreeItem"
+
+    FileContentResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            path:
+              type: string
+              description: 文件路径
+            content:
+              type: string
+              description: 文件内容
+
+    # --- 任务 ---
+    RunTaskRequest:
+      type: object
+      required: [task]
+      properties:
+        task:
+          type: string
+          description: 编程任务描述
+          minLength: 1
+        provider:
+          type: string
+          description: "AI 服务商 ID (默认: 第一个已配置的 Provider)"
+        model:
+          type: string
+          description: "模型名称 (默认: Provider 的第一个模型)"
+        apiKey:
+          type: string
+          description: API Key (可选，优先于环境变量)
+
+    RunTaskResponse:
+      type: object
+      properties:
+        plan:
+          type: string
+          description: AI 生成的执行计划
+        code:
+          type: string
+          description: AI 生成的 TypeScript 代码
+
+    # --- Anthropic Messages ---
+    AnthropicContentBlock:
+      oneOf:
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: [text]
+            text:
+              type: string
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: [tool_use]
+            id:
+              type: string
+            name:
+              type: string
+            input:
+              type: object
+
+    AnthropicMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          description: 字符串或 content block 数组
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+
+    AnthropicMessagesRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+          description: 模型名称
+        max_tokens:
+          type: integer
+          description: 最大输出 token 数
+          default: 4096
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnthropicMessage"
+        system:
+          type: string
+          description: System prompt (字符串或数组)
+        stream:
+          type: boolean
+          description: 是否启用 SSE 流式响应
+          default: false
+        temperature:
+          type: number
+          description: 采样温度 (0-1)
+          minimum: 0
+          maximum: 1
+        tools:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              description:
+                type: string
+              input_schema:
+                type: object
+
+    AnthropicMessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [message]
+        role:
+          type: string
+          enum: [assistant]
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnthropicContentBlock"
+        model:
+          type: string
+        stop_reason:
+          type: string
+          enum: [end_turn, max_tokens, stop_sequence, tool_use]
+        usage:
+          type: object
+          properties:
+            input_tokens:
+              type: integer
+            output_tokens:
+              type: integer
+
+    AnthropicErrorResponse:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [error]
+        error:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [invalid_request_error, api_error]
+            message:
+              type: string
+
+    # --- OpenAI Responses ---
+    OpenAIResponsesRequest:
+      type: object
+      required: [model]
+      properties:
+        model:
+          type: string
+          description: 模型名称
+        input:
+          description: 用户输入 (字符串或消息数组)
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+        instructions:
+          type: string
+          description: 系统指令
+        stream:
+          type: boolean
+          description: 是否启用 SSE 流式响应
+          default: false
+        temperature:
+          type: number
+          description: 采样温度 (0-2)
+        tools:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                enum: [function]
+              name:
+                type: string
+              description:
+                type: string
+              parameters:
+                type: object
+
+    OpenAIResponseResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [response]
+        model:
+          type: string
+        output:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                enum: [message]
+              role:
+                type: string
+                enum: [assistant]
+              content:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum: [output_text]
+                    text:
+                      type: string
+        usage:
+          type: object
+          properties:
+            input_tokens:
+              type: integer
+            output_tokens:
+              type: integer
+
+    OpenAIErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+              enum: [invalid_request_error, api_error]
