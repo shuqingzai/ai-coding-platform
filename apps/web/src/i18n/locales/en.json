@@ -1,0 +1,103 @@
+{
+  "nav": {
+    "title": "AI Coding",
+    "chat": "Chat",
+    "api": "API",
+    "files": "Files",
+    "aiChat": "AI Chat",
+    "terminal": "Terminal"
+  },
+  "chat": {
+    "placeholder": "Describe your requirements...",
+    "empty": "Start a conversation and let AI write code for you",
+    "clear": "Clear conversation",
+    "collapse": "Collapse panel",
+    "expand": "Expand chat panel",
+    "hint": "Enter to send · Shift+Enter for new line",
+    "cancel": "Cancel",
+    "searchModel": "Search provider or model...",
+    "selectProvider": "Select provider",
+    "noModel": "No models",
+    "loadingModel": "Loading models...",
+    "useProvider": "Use {{name}}",
+    "customLabel": " (custom)"
+  },
+  "file": {
+    "title": "Files",
+    "refresh": "Refresh file list",
+    "expand": "Expand file panel",
+    "selectHint": "Select a file",
+    "selectDesc": "Click a file from the left panel to view code",
+    "loading": "Loading...",
+    "noChange": "No changes",
+    "change": "Changes",
+    "closeDiff": "Close diff view"
+  },
+  "terminal": {
+    "waiting": "Waiting for command output..."
+  },
+  "task": {
+    "title": "API Task Mode",
+    "noProvider": "No provider configured — configure API Key in .env or settings",
+    "label": "Task Description",
+    "desc": "Describe the programming task you want AI to complete...",
+    "run": "Run Task",
+    "using": "Using",
+    "plan": "Execution Plan",
+    "code": "Generated Code"
+  },
+  "provider": {
+    "addCustom": "Add Custom Provider",
+    "title": "API Key Management",
+    "desc": "Keys set here are saved in browser localStorage, taking priority over .env variables.",
+    "envConfigured": ".env configured",
+    "overridden": "Overridden",
+    "inputPlaceholder": "Enter {{name}} API Key...",
+    "done": "Done",
+    "setDefault": "Set {{name}} as default",
+    "customTitle": "Add Custom Provider",
+    "name": "Provider ID",
+    "namePlaceholder": "Unique ID, e.g. my-llm",
+    "displayName": "Display Name",
+    "displayNamePlaceholder": "My LLM",
+    "protocol": "Protocol",
+    "baseUrl": "Base URL",
+    "baseUrlPlaceholder": "https://api.example.com/v1",
+    "apiKey": "API Key",
+    "apiKeyPlaceholder": "sk-...",
+    "models": "Model List (one per line)",
+    "modelsPlaceholder": "Required — supported models\ngpt-4o\ngpt-4o-mini",
+    "providerOptions": "Provider Options (JSON)",
+    "providerOptionsPlaceholder": "{\"reasoningEffort\":\"medium\"}",
+    "providerOptionsHint": "See AI SDK Provider Options: reasoningEffort/reasoningSummary/textVerbosy (OpenAI) or effort/thinking/speed (Anthropic)",
+    "apiStyleHint": "Responses API supports reasoningEffort / reasoningSummary / webSearch advanced features",
+    "submit": "Add Provider",
+    "submitting": "Adding...",
+    "errorRequired": "Required fields: ID, Base URL, API Key",
+    "errorModels": "At least one model is required"
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "message": {
+    "copy": "Copy",
+    "copied": "Copied"
+  },
+  "diff": {
+    "title": "Changes",
+    "noChange": "No Changes"
+  },
+  "common": {
+    "language": "Language",
+    "close": "Close",
+    "error": "Error",
+    "loadError": "Failed to load"
+  },
+  "suggestions": {
+    "createReact": "Create React component",
+    "fixBug": "Fix bug",
+    "explainCode": "Explain code"
+  }
+}

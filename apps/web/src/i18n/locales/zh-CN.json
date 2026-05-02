@@ -1,0 +1,103 @@
+{
+  "nav": {
+    "title": "AI Coding",
+    "chat": "Chat",
+    "api": "API",
+    "files": "文件",
+    "aiChat": "AI Chat",
+    "terminal": "终端"
+  },
+  "chat": {
+    "placeholder": "描述你的需求...",
+    "empty": "开始对话，让 AI 帮你写代码",
+    "clear": "清空对话",
+    "collapse": "折叠面板",
+    "expand": "展开聊天面板",
+    "hint": "Enter 发送 · Shift+Enter 换行",
+    "cancel": "取消",
+    "searchModel": "搜索服务商或模型...",
+    "selectProvider": "选择服务商",
+    "noModel": "暂无模型",
+    "loadingModel": "加载模型中...",
+    "useProvider": "使用 {{name}}",
+    "customLabel": " (自定义)"
+  },
+  "file": {
+    "title": "文件",
+    "refresh": "刷新文件列表",
+    "expand": "展开文件面板",
+    "selectHint": "选择一个文件",
+    "selectDesc": "从左侧文件树点击文件查看代码",
+    "loading": "加载中...",
+    "noChange": "无变更",
+    "change": "变更",
+    "closeDiff": "关闭差异视图"
+  },
+  "terminal": {
+    "waiting": "等待命令输出..."
+  },
+  "task": {
+    "title": "API 任务模式",
+    "noProvider": "未配置服务商 — 请在 .env 或设置中配置 API Key",
+    "label": "任务描述",
+    "desc": "描述你想让 AI 完成的编程任务...",
+    "run": "执行任务",
+    "using": "使用",
+    "plan": "执行计划",
+    "code": "生成代码"
+  },
+  "provider": {
+    "addCustom": "添加自定义服务商",
+    "title": "API Key 管理",
+    "desc": "在此设置的 Key 保存在浏览器本地，优先级高于 .env 环境变量。",
+    "envConfigured": ".env 已配置",
+    "overridden": "已覆盖",
+    "inputPlaceholder": "输入 {{name}} API Key...",
+    "done": "完成",
+    "setDefault": "将 {{name}} 设为默认",
+    "customTitle": "添加自定义服务商",
+    "name": "服务商名称",
+    "namePlaceholder": "唯一标识，如 my-llm",
+    "displayName": "显示名称",
+    "displayNamePlaceholder": "My LLM",
+    "protocol": "协议",
+    "baseUrl": "Base URL",
+    "baseUrlPlaceholder": "https://api.example.com/v1",
+    "apiKey": "API Key",
+    "apiKeyPlaceholder": "sk-...",
+    "models": "模型列表 (一行一个)",
+    "modelsPlaceholder": "必填 — 该服务商支持的模型\ngpt-4o\ngpt-4o-mini",
+    "providerOptions": "Provider Options (JSON)",
+    "providerOptionsPlaceholder": "{\"reasoningEffort\":\"medium\"}",
+    "providerOptionsHint": "参考 AI SDK Provider Options: reasoningEffort/reasoningSummary/textVerbosy (OpenAI) 或 effort/thinking/speed (Anthropic)",
+    "apiStyleHint": "Responses API 支持 reasoningEffort / reasoningSummary / webSearch 等高级功能",
+    "submit": "添加服务商",
+    "submitting": "添加中...",
+    "errorRequired": "请填写必填字段: ID, Base URL, API Key",
+    "errorModels": "请至少填写一个模型"
+  },
+  "theme": {
+    "light": "浅色",
+    "dark": "暗黑",
+    "system": "跟随系统"
+  },
+  "message": {
+    "copy": "复制",
+    "copied": "已复制"
+  },
+  "diff": {
+    "title": "变更",
+    "noChange": "无变更"
+  },
+  "common": {
+    "language": "语言",
+    "close": "关闭",
+    "error": "错误",
+    "loadError": "加载失败"
+  },
+  "suggestions": {
+    "createReact": "创建一个 React 组件",
+    "fixBug": "修复代码中的 bug",
+    "explainCode": "解释这段代码的作用"
+  }
+}
